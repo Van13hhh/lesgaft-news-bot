@@ -12,8 +12,16 @@ POSTS_COUNT = 60
 
 
 def init_firebase():
-    with open("serviceAccountKey.json", "r", encoding="utf-8") as f:
-        service_account_dict = json.load(f)
+    service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+    print(f"DEBUG: FIREBASE_SERVICE_ACCOUNT задан: {service_account_json is not None}")
+    print(f"DEBUG: VK_TOKEN задан: {os.environ.get('VK_TOKEN') is not None}")
+    print(f"DEBUG: VK_GROUP_ID = {os.environ.get('VK_GROUP_ID')}")
+
+    if service_account_json:
+        service_account_dict = json.loads(service_account_json)
+    else:
+        with open("serviceAccountKey.json", "r", encoding="utf-8") as f:
+            service_account_dict = json.load(f)
 
     cred = credentials.Certificate(service_account_dict)
     firebase_admin.initialize_app(cred)
