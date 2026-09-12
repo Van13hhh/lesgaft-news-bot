@@ -32,9 +32,8 @@ def is_advertisement(post):
 
 
 def should_update_stats():
-    """Обновлять статистику раз в 2 часа"""
     now = datetime.now()
-    return now.hour % STATS_UPDATE_INTERVAL_HOURS == 0
+    return now.hour % STATS_UPDATE_INTERVAL_HOURS == 0 and now.minute < 15
 
 
 def extract_images(attachments):
@@ -163,11 +162,9 @@ def save_to_firestore(db, posts, update_stats=False):
 
         doc_ref = db.collection("news").document(str(post["id"]))
 
-        # Проверяем, есть ли уже документ
         existing = doc_ref.get()
 
         if existing.exists and not update_stats:
-            # Документ есть, статистику не обновляем — пропускаем
             skipped += 1
             continue
 
