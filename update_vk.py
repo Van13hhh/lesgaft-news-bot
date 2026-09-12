@@ -31,6 +31,12 @@ def is_advertisement(post):
     return post.get("marked_as_ads", 0) == 1
 
 
+def has_video(post):
+    """True, если в посте есть хотя бы одно видео (обычное или клип)."""
+    attachments = post.get("attachments", [])
+    return any(att.get("type") == "video" for att in attachments)
+
+
 def should_update_stats():
     now = datetime.now()
     return now.hour % STATS_UPDATE_INTERVAL_HOURS == 0 and now.minute < 15
@@ -60,30 +66,6 @@ def extract_images(attachments):
                     "height": photo.get("height", 0),
                 })
     return images
-
-
-def extract_videos(attachments):
-    if not attachments:
-        return []
-    videos = []
-    for att in attachments:
-        if att.get("type") == "video":
-            video = att.get("video", {})
-            images = video.get("image", [])
-            preview = images[-1].get("url") if images else None
-
-            videos.append({
-                "id": video.get("id"),
-                "owner_id": video.get("owner_id"),
-                "title": video.get("title", ""),
-                "description": video.get("description", ""),
-                "duration": video.get("duration", 0),
-                "preview": preview,
-                "player": video.get("player", ""),
-                "views": video.get("views", 0),
-                "date": video.get("date", 0),
-            })
-    return videos
 
 
 def extract_docs(attachments):
@@ -142,16 +124,24 @@ def save_to_firestore(db, posts, update_stats=False):
     batch = db.batch()
     saved = 0
     skipped = 0
+    skipped_video = 0
 
     for post in posts:
+        # 1. Реклама — пропускаем
         if is_advertisement(post):
             print(f"  Пост {post['id']} — реклама, пропускаем")
+            continue
+
+        # 2. Есть видео — пропускаем ЦЕЛИКОМ (не важно, что ещё внутри)
+        if has_video(post):
+            print(f"  Пост {post['id']} — содержит видео, пропускаем")
+            skipped_video += 1
             continue
 
         attachments = post.get("attachments", [])
 
         has_useful_attachments = any(
-            att.get("type") in ("photo", "video", "doc", "link")
+            att.get("type") in ("photo", "doc", "link")
             for att in attachments
         )
         has_text = bool(post.get("text", "").strip())
@@ -175,7 +165,6 @@ def save_to_firestore(db, posts, update_stats=False):
                 "text": post.get("text", ""),
                 "date": post.get("date", 0),
                 "images": extract_images(attachments),
-                "videos": extract_videos(attachments),
                 "docs": extract_docs(attachments),
                 "links": extract_links(attachments),
                 "likes": post.get("likes", {}).get("count", 0),
@@ -187,12 +176,14 @@ def save_to_firestore(db, posts, update_stats=False):
         saved += 1
 
     batch.commit()
-    print(f"Сохранено: {saved}, пропущено (уже есть): {skipped}")
+    print(f"Сохранено: {saved}, пропущено (уже есть): {skipped}, пропущено (видео): {skipped_video}")
 
 
 def delete_old_posts(db, weeks_back=3):
     cutoff = int((datetime.now() - timedelta(weeks=weeks_back)).timestamp())
-    old_posts = db.collection("news").where("date", "<", cutoff).stream()
+    old_posts = db.collection("news").where(
+        filter=firestore.FieldFilter("date", "<", cutoff)
+    ).stream()
 
     deleted = 0
     for post in old_posts:
