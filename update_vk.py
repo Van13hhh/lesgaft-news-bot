@@ -10,6 +10,7 @@ load_dotenv()
 
 POSTS_COUNT = 60
 WEEKS_BACK = 3
+STATS_UPDATE_INTERVAL_HOURS = 2
 
 
 def init_firebase():
@@ -28,6 +29,12 @@ def init_firebase():
 
 def is_advertisement(post):
     return post.get("marked_as_ads", 0) == 1
+
+
+def should_update_stats():
+    """Обновлять статистику раз в 2 часа"""
+    now = datetime.now()
+    return now.hour % STATS_UPDATE_INTERVAL_HOURS == 0
 
 
 def extract_images(attachments):
@@ -132,9 +139,10 @@ def fetch_vk_posts():
     return response.json()
 
 
-def save_to_firestore(db, posts):
+def save_to_firestore(db, posts, update_stats=False):
     batch = db.batch()
     saved = 0
+    skipped = 0
 
     for post in posts:
         if is_advertisement(post):
@@ -154,6 +162,15 @@ def save_to_firestore(db, posts):
             continue
 
         doc_ref = db.collection("news").document(str(post["id"]))
+
+        # Проверяем, есть ли уже документ
+        existing = doc_ref.get()
+
+        if existing.exists and not update_stats:
+            # Документ есть, статистику не обновляем — пропускаем
+            skipped += 1
+            continue
+
         batch.set(
             doc_ref,
             {
@@ -173,7 +190,7 @@ def save_to_firestore(db, posts):
         saved += 1
 
     batch.commit()
-    print(f"Сохранено {saved} постов (из {len(posts)})")
+    print(f"Сохранено: {saved}, пропущено (уже есть): {skipped}")
 
 
 def delete_old_posts(db, weeks_back=3):
@@ -202,7 +219,10 @@ def main():
     posts = data["response"]["items"]
     print(f"Получено {len(posts)} постов из VK")
 
-    save_to_firestore(db, posts)
+    update_stats = should_update_stats()
+    print(f"Обновление статистики: {'ДА' if update_stats else 'НЕТ'}")
+
+    save_to_firestore(db, posts, update_stats=update_stats)
     delete_old_posts(db, WEEKS_BACK)
     print("Готово!")
 
