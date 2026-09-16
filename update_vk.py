@@ -10,7 +10,6 @@ load_dotenv()
 
 POSTS_COUNT = 60
 WEEKS_BACK = 3
-STATS_UPDATE_INTERVAL_HOURS = 2
 
 
 def init_firebase():
@@ -35,11 +34,6 @@ def has_video(post):
     """True, если в посте есть хотя бы одно видео (обычное или клип)."""
     attachments = post.get("attachments", [])
     return any(att.get("type") == "video" for att in attachments)
-
-
-def should_update_stats():
-    now = datetime.now()
-    return now.hour % STATS_UPDATE_INTERVAL_HOURS == 0 and now.minute < 15
 
 
 def extract_images(attachments):
@@ -120,7 +114,7 @@ def fetch_vk_posts():
     return response.json()
 
 
-def save_to_firestore(db, posts, update_stats=False):
+def save_to_firestore(db, posts):
     batch = db.batch()
     saved = 0
     skipped = 0
@@ -154,7 +148,7 @@ def save_to_firestore(db, posts, update_stats=False):
 
         existing = doc_ref.get()
 
-        if existing.exists and not update_stats:
+        if existing.exists:
             skipped += 1
             continue
 
@@ -167,9 +161,6 @@ def save_to_firestore(db, posts, update_stats=False):
                 "images": extract_images(attachments),
                 "docs": extract_docs(attachments),
                 "links": extract_links(attachments),
-                "likes": post.get("likes", {}).get("count", 0),
-                "views": post.get("views", {}).get("count", 0),
-                "updated_at": firestore.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -192,12 +183,36 @@ def delete_old_posts(db, weeks_back=3):
 
     print(f"Удалено старых постов: {deleted}")
 
+def remove_stats_fields(db):
+    from firebase_admin import firestore as fs
+
+    docs = db.collection("news").stream()
+    batch = db.batch()
+    count = 0
+
+    for doc in docs:
+        batch.update(doc.reference, {
+            "likes": fs.DELETE_FIELD,
+            "views": fs.DELETE_FIELD,
+            "updated_at": fs.DELETE_FIELD,
+        })
+        count += 1
+
+        # Firestore рекомендует коммитить батчами не больше 500 операций
+        if count % 500 == 0:
+            batch.commit()
+            batch = db.batch()
+
+    batch.commit()
+    print(f"Очищено документов: {count}")    
+
 
 def main():
     print("Запуск обновления VK...")
 
     db = init_firebase()
     print("Firebase подключён")
+    remove_stats_fields(db)
 
     data = fetch_vk_posts()
     if "response" not in data:
@@ -207,10 +222,7 @@ def main():
     posts = data["response"]["items"]
     print(f"Получено {len(posts)} постов из VK")
 
-    update_stats = should_update_stats()
-    print(f"Обновление статистики: {'ДА' if update_stats else 'НЕТ'}")
-
-    save_to_firestore(db, posts, update_stats=update_stats)
+    save_to_firestore(db, posts)
     delete_old_posts(db, WEEKS_BACK)
     print("Готово!")
 
