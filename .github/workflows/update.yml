@@ -2,7 +2,7 @@ name: VK News Update
 
 on:
   schedule:
-    - cron: '/30 * * * *'
+    - cron: '30 * * * *'
   workflow_dispatch:
 
 jobs:
