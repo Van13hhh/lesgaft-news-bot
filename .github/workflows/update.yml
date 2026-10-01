@@ -2,7 +2,7 @@ name: VK News Update
 
 on:
   schedule:
-    - cron: '30 * * * *'
+    - cron: '30 * * * *'   # каждый час в :30 (GitHub Actions часто запаздывает/пропускает — частота компенсирует)
   workflow_dispatch:
 
 jobs:
