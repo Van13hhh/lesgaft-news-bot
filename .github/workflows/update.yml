@@ -2,7 +2,8 @@ name: VK News Update
 
 on:
   schedule:
-    - cron: '30 * * * *'   # каждый час в :30 (GitHub Actions часто запаздывает/пропускает — частота компенсирует)
+    - cron: '30 * * * *'    # каждый час в :30 — только синхронизация постов (без удаления, без лишних reads)
+    - cron: '0 3 * * *'     # раз в день в 03:00 UTC — дополнительно чистка старых постов (RUN_CLEANUP=1)
   workflow_dispatch:
 
 jobs:
@@ -25,4 +26,6 @@ jobs:
           VK_TOKEN: ${{ secrets.VK_TOKEN }}
           VK_GROUP_ID: ${{ secrets.VK_GROUP_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # Чистку старых постов включаем только для ежедневного запуска в 03:00 UTC.
+          RUN_CLEANUP: ${{ github.event.schedule == '0 3 * * *' && '1' || '0' }}
         run: python update_vk.py

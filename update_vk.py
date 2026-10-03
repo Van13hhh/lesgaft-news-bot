@@ -197,7 +197,14 @@ def main():
     print(f"Получено {len(posts)} постов из VK")
 
     save_to_firestore(db, posts)
-    delete_old_posts(db, WEEKS_BACK)
+
+    # Удаление старых постов читает коллекцию (reads), поэтому запускаем его не каждый час,
+    # а только когда явно задан флаг RUN_CLEANUP=1 (отдельный ежедневный cron).
+    if os.environ.get("RUN_CLEANUP") == "1":
+        delete_old_posts(db, WEEKS_BACK)
+    else:
+        print("Пропуск удаления старых постов (RUN_CLEANUP != 1)")
+
     print("Готово!")
 
 
